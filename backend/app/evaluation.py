@@ -18,6 +18,7 @@ from .models import (
     ConflictRecord,
     DecisionRecord,
     EvidenceRecord,
+    ReevaluationAuditRecord,
 )
 from .schemas import (
     Claim,
@@ -25,6 +26,7 @@ from .schemas import (
     Decision,
     Evidence,
     EvidenceGraph,
+    ReevaluationAudit,
     RiskLevel,
 )
 
@@ -35,6 +37,7 @@ class AnalysisBundle:
     conflicts: list[Conflict]
     decision: Decision
     graph: EvidenceGraph
+    audit: ReevaluationAudit | None = None
 
 
 def analyze_case(
@@ -43,6 +46,9 @@ def analyze_case(
     *,
     provider: ClaimProvider | None = None,
     now: datetime | None = None,
+    previous_decision: Decision | None = None,
+    new_evidence: Evidence | None = None,
+    is_reevaluation: bool = False,
 ) -> AnalysisBundle:
     """Run specialists, gate the result, and replace the case's current analysis."""
 
@@ -78,8 +84,15 @@ def analyze_case(
         build_case_graph_json(UUID(case.id), evidence, claims, conflicts, decision)
     )
 
-    _replace_current_analysis(db, case.id, claims, conflicts, decision)
-    return AnalysisBundle(claims=claims, conflicts=conflicts, decision=decision, graph=graph)
+    audit = _build_audit(previous_decision, new_evidence, decision, is_reevaluation)
+    _replace_current_analysis(db, case.id, claims, conflicts, decision, audit)
+    return AnalysisBundle(
+        claims=claims,
+        conflicts=conflicts,
+        decision=decision,
+        graph=graph,
+        audit=audit,
+    )
 
 
 def fresh_claims_for_conflicts(
@@ -140,6 +153,57 @@ def load_current_analysis(
     return evidence, claims, conflicts, decision_from_record(decision_record) if decision_record else None
 
 
+def load_latest_audit(db: Session, case_id: str) -> ReevaluationAudit | None:
+    record = db.scalar(
+        select(ReevaluationAuditRecord)
+        .where(ReevaluationAuditRecord.case_id == case_id)
+        .order_by(ReevaluationAuditRecord.created_at.desc())
+    )
+    if record is None:
+        return None
+    new_evidence = (
+        evidence_from_record(db.get(EvidenceRecord, record.new_evidence_id))
+        if record.new_evidence_id
+        else None
+    )
+    return ReevaluationAudit(
+        previous_decision=record.previous_decision,
+        new_evidence=new_evidence,
+        new_decision=record.new_decision,
+        reason_for_change=record.reason_for_change,
+        created_at=record.created_at,
+    )
+
+
+def _build_audit(
+    previous_decision: Decision | None,
+    new_evidence: Evidence | None,
+    decision: Decision,
+    is_reevaluation: bool,
+) -> ReevaluationAudit | None:
+    if not is_reevaluation:
+        return None
+    if previous_decision is None:
+        reason = f"Initial decision established from submitted evidence: {decision.reason}"
+    elif previous_decision.decision != decision.decision:
+        reason = (
+            f"Decision changed from {previous_decision.decision.value} to "
+            f"{decision.decision.value}: {decision.reason}"
+        )
+    else:
+        reason = (
+            f"Decision remained {decision.decision.value} after deterministic re-evaluation: "
+            f"{decision.reason}"
+        )
+    return ReevaluationAudit(
+        previous_decision=previous_decision.decision if previous_decision else None,
+        new_evidence=new_evidence,
+        new_decision=decision.decision,
+        reason_for_change=reason,
+        created_at=decision.created_at,
+    )
+
+
 def evidence_from_record(record: EvidenceRecord) -> Evidence:
     return Evidence(
         id=UUID(record.id),
@@ -196,6 +260,7 @@ def _replace_current_analysis(
     claims: Sequence[Claim],
     conflicts: Sequence[Conflict],
     decision: Decision,
+    audit: ReevaluationAudit | None,
 ) -> None:
     # The MVP keeps the latest analysis only. Evidence remains append-only, so
     # reevaluation can always be repeated from the complete evidence set.
@@ -242,4 +307,15 @@ def _replace_current_analysis(
             created_at=decision.created_at,
         )
     )
+    if audit is not None:
+        db.add(
+            ReevaluationAuditRecord(
+                case_id=case_id,
+                previous_decision=audit.previous_decision.value if audit.previous_decision else None,
+                new_evidence_id=str(audit.new_evidence.id) if audit.new_evidence else None,
+                new_decision=audit.new_decision.value,
+                reason_for_change=audit.reason_for_change,
+                created_at=audit.created_at,
+            )
+        )
     db.commit()

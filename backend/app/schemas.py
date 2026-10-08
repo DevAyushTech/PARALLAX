@@ -113,6 +113,14 @@ class Decision(ContractModel):
         return value
 
 
+class ReevaluationAudit(ContractModel):
+    previous_decision: DecisionType | None = None
+    new_evidence: Evidence | None = None
+    new_decision: DecisionType
+    reason_for_change: str = Field(min_length=1, max_length=2000)
+    created_at: datetime
+
+
 class EvidenceCreate(ContractModel):
     """Input accepted by the Phase 1 evidence endpoint."""
 
@@ -157,6 +165,7 @@ class CaseDetail(CaseResponse):
     claims: list[Claim] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
     decision: Decision | None = None
+    audit: ReevaluationAudit | None = None
 
 
 class GraphNodeType(str, Enum):
@@ -191,6 +200,7 @@ class AnalysisResponse(ContractModel):
     conflicts: list[Conflict] = Field(default_factory=list)
     decision: Decision
     graph: EvidenceGraph
+    audit: ReevaluationAudit | None = None
 
 
 # Compatibility names for the existing API module; the contract types above are canonical.

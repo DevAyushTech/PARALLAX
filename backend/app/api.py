@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .evaluation import AnalysisBundle, analyze_case, load_current_analysis
+from .evaluation import (
+    AnalysisBundle,
+    analyze_case,
+    load_current_analysis,
+    load_latest_audit,
+)
 from .evidence_graph import build_case_graph_json
 from .models import CaseRecord, EvidenceRecord
 from .schemas import (
@@ -114,10 +119,34 @@ def reevaluate(
     case_id: str, payload: EvidenceCreate | None = None, db: Session = Depends(get_db)
 ) -> AnalysisResponse:
     case = _get_case_or_404(db, case_id)
+    _, _, _, previous_decision = load_current_analysis(db, case.id)
+    new_evidence = None
     if payload is not None:
-        db.add(_evidence_record(case.id, payload))
+        record = _evidence_record(case.id, payload)
+        db.add(record)
         db.commit()
-    return _analysis_response(analyze_case(db, case))
+        db.refresh(record)
+        new_evidence = _evidence_response(record)
+    elif previous_decision is not None:
+        latest_new_record = db.scalar(
+            select(EvidenceRecord)
+            .where(
+                EvidenceRecord.case_id == case.id,
+                EvidenceRecord.created_at > previous_decision.created_at,
+            )
+            .order_by(EvidenceRecord.created_at.desc())
+        )
+        if latest_new_record is not None:
+            new_evidence = _evidence_response(latest_new_record)
+    return _analysis_response(
+        analyze_case(
+            db,
+            case,
+            previous_decision=previous_decision,
+            new_evidence=new_evidence,
+            is_reevaluation=True,
+        )
+    )
 
 
 def _get_case_or_404(db: Session, case_id: str) -> CaseRecord:
@@ -180,6 +209,7 @@ def _case_detail(db: Session, case_id: str) -> CaseDetail:
         claims=claims,
         conflicts=conflicts,
         decision=decision,
+        audit=load_latest_audit(db, case.id),
     )
 
 
@@ -190,4 +220,5 @@ def _analysis_response(bundle: AnalysisBundle) -> AnalysisResponse:
         conflicts=bundle.conflicts,
         decision=bundle.decision,
         graph=bundle.graph,
+        audit=bundle.audit,
     )

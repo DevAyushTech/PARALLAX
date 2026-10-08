@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -29,3 +29,17 @@ def init_db() -> None:
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _upgrade_existing_sqlite_schema()
+
+
+def _upgrade_existing_sqlite_schema() -> None:
+    """Apply the one additive schema change needed by the MVP audit loop."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    columns = {column["name"] for column in inspect(engine).get_columns("evidence")}
+    if "created_at" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE evidence ADD COLUMN created_at DATETIME"))
+        connection.execute(text("UPDATE evidence SET created_at = timestamp WHERE created_at IS NULL"))

@@ -49,7 +49,7 @@ All request/response bodies are JSON, unless no request body is indicated.
 | POST | `/api/cases/{case_id}/analyze` | none (an empty JSON object is also accepted) | 200: `AnalysisResponse` |
 | GET | `/api/cases/{case_id}/graph` | none | 200: `EvidenceGraph` |
 | GET | `/api/cases/{case_id}/decision` | none | 200: `Decision` |
-| POST | `/api/cases/{case_id}/reevaluate` | optional `EvidenceCreate`; omit body to reuse stored evidence | 200: `AnalysisResponse` |
+| POST | `/api/cases/{case_id}/reevaluate` | optional `EvidenceCreate`; omit body to reuse stored evidence | 200: `AnalysisResponse` with audit |
 
 Existing compatibility aliases are retained, not new features:
 
@@ -162,7 +162,7 @@ There is no automatic timestamp replacement, forced conflict resolution, or guar
 }
 ```
 
-`GET /api/cases/{case_id}` adds `claims`, `conflicts`, and `decision` to this shape. Before any analysis, `claims` and `conflicts` are `[]` and `decision` is `null`. Case `status` is not a processing-state field and is not automatically updated by analysis.
+`GET /api/cases/{case_id}` adds `claims`, `conflicts`, `decision`, and `audit` to this shape. Before any analysis, `claims` and `conflicts` are `[]`, `decision` and `audit` are `null`. Case `status` is not a processing-state field and is not automatically updated by analysis.
 
 ### Stored evidence — `Evidence`
 
@@ -183,7 +183,7 @@ There is no automatic timestamp replacement, forced conflict resolution, or guar
 
 ### Analyze/re-evaluate — `AnalysisResponse`
 
-The envelope is always `{ case_id, claims, conflicts, decision, graph }`; neither a `success` wrapper nor a `data` wrapper is added by the server. A compact, schema-valid example is below. Graph `data` objects are abbreviated here; runtime nodes include the corresponding evidence/claim/decision attributes.
+The envelope is always `{ case_id, claims, conflicts, decision, graph, audit }`; neither a `success` wrapper nor a `data` wrapper is added by the server. `audit` is `null` for initial analysis and populated by re-evaluation. A compact, schema-valid example is below. Graph `data` objects are abbreviated here; runtime nodes include the corresponding evidence/claim/decision attributes.
 
 ```json
 {
@@ -222,6 +222,7 @@ The envelope is always `{ case_id, claims, conflicts, decision, graph }`; neithe
     "next_evidence_request": null,
     "created_at": "2026-01-01T12:00:01Z"
   },
+  "audit": null,
   "graph": {
     "nodes": [
       {"id": "evidence:22222222-2222-4222-8222-222222222222", "type": "evidence", "label": "bridge_camera", "data": {}},
@@ -282,6 +283,31 @@ Returns the `Decision` object directly, the same shape as `AnalysisResponse.deci
 ```
 
 This is an illustrative recoverable-conflict response, not a promise that every conflict becomes `ASK`. High-risk or severe contradictions can return `ABSTAIN`. `next_evidence_request` is populated for `ASK`, otherwise normally `null`.
+
+### Re-evaluation audit
+
+`AnalysisResponse.audit` and `CaseDetail.audit` are `null` until a re-evaluation runs. Thereafter the latest audit is persisted and has this concise shape:
+
+```json
+{
+  "previous_decision": "ACT",
+  "new_evidence": {
+    "id": "99999999-9999-4999-8999-999999999999",
+    "case_id": "11111111-1111-4111-8111-111111111111",
+    "source_type": "SENSOR",
+    "source_name": "camera_current",
+    "content": "Bridge B is safe",
+    "timestamp": "2026-01-01T12:05:00",
+    "confidence": 0.9,
+    "metadata": {"fresh": true}
+  },
+  "new_decision": "ABSTAIN",
+  "reason_for_change": "Decision changed from ACT to ABSTAIN: Evidence is severely contradictory; critical safety remains unresolved.",
+  "created_at": "2026-01-01T12:05:01"
+}
+```
+
+`previous_decision` is `null` if re-evaluation happens before any initial decision. `new_evidence` is populated with the latest evidence submitted after the previous decision when evidence was added through `/evidence` before a no-body re-evaluation; it is `null` only when no new evidence can be identified. The current `decision.reason`, `conflicting_claim_ids`, `supporting_evidence_ids`, and graph provide the full transparent trace.
 
 ### Graph response — `GET /api/cases/{case_id}/graph`
 

@@ -35,6 +35,9 @@ class CaseRecord(Base):
     decisions: Mapped[list[DecisionRecord]] = relationship(
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"
     )
+    reevaluation_audits: Mapped[list[ReevaluationAuditRecord]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
 
 
 class EvidenceRecord(Base):
@@ -49,6 +52,7 @@ class EvidenceRecord(Base):
     source_name: Mapped[str] = mapped_column(String(120), nullable=False)
     content: Mapped[str] = mapped_column(String(5000), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
 
@@ -85,6 +89,25 @@ class ConflictRecord(Base):
     reason: Mapped[str] = mapped_column(String(2000), nullable=False)
 
     case: Mapped[CaseRecord] = relationship(back_populates="conflicts")
+
+
+class ReevaluationAuditRecord(Base):
+    __tablename__ = "reevaluation_audits"
+    __table_args__ = (Index("ix_reevaluation_audits_case_created", "case_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    previous_decision: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    new_evidence_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence.id", ondelete="SET NULL"), nullable=True
+    )
+    new_decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_for_change: Mapped[str] = mapped_column(String(2000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    case: Mapped[CaseRecord] = relationship(back_populates="reevaluation_audits")
 
 
 class DecisionRecord(Base):
