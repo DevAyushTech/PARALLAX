@@ -26,7 +26,9 @@ export const getEvidenceGraph = (caseId) =>
 
 export const getDecision = (caseId) => api.get(`/api/cases/${caseId}/decision`);
 
-export const reevaluateCase = (caseId) =>
-  api.post(`/api/cases/${caseId}/reevaluate`);
+export const reevaluateCase = (caseId, evidence) =>
+  evidence
+    ? api.post(`/api/cases/${caseId}/reevaluate`, evidence)
+    : api.post(`/api/cases/${caseId}/reevaluate`);
 
 export default api;
