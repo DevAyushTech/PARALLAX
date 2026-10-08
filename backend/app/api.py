@@ -111,11 +111,12 @@ def get_decision(case_id: str, db: Session = Depends(get_db)) -> Decision:
 
 @router.post("/cases/{case_id}/reevaluate", response_model=AnalysisResponse)
 def reevaluate(
-    case_id: str, payload: EvidenceCreate, db: Session = Depends(get_db)
+    case_id: str, payload: EvidenceCreate | None = None, db: Session = Depends(get_db)
 ) -> AnalysisResponse:
     case = _get_case_or_404(db, case_id)
-    db.add(_evidence_record(case.id, payload))
-    db.commit()
+    if payload is not None:
+        db.add(_evidence_record(case.id, payload))
+        db.commit()
     return _analysis_response(analyze_case(db, case))
 
 

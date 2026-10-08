@@ -5,3 +5,4 @@ __pycache__/
 parallax.db
 *.sqlite3
 .env
+__agent__/
