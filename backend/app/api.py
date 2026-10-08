@@ -110,7 +110,10 @@ def get_decision(case_id: str, db: Session = Depends(get_db)) -> Decision:
     _get_case_or_404(db, case_id)
     _, _, _, decision = load_current_analysis(db, case_id)
     if decision is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not available")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Decision not available. Run analysis for this case first.",
+        )
     return decision
 
 
@@ -152,7 +155,10 @@ def reevaluate(
 def _get_case_or_404(db: Session, case_id: str) -> CaseRecord:
     case = db.get(CaseRecord, case_id)
     if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found. Verify the case_id.",
+        )
     return case
 
 

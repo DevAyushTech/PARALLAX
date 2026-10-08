@@ -3,6 +3,12 @@ __pycache__/
 .pytest_cache/
 .venv/
 parallax.db
+*.db
+*.sqlite
 *.sqlite3
 .env
+.env.*
+!.env.example
 __agent__/
+frontend/dist/
+frontend/node_modules/

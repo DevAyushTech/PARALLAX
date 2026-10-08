@@ -25,7 +25,8 @@ class DecisionThresholds(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="PARALLAX_", env_nested_delimiter="__", extra="ignore"
+        env_prefix="PARALLAX_", env_nested_delimiter="__", env_file=".env",
+        env_file_encoding="utf-8", extra="ignore"
     )
 
     app_name: str = "PARALLAX API"

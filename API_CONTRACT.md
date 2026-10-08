@@ -12,7 +12,7 @@ PARALLAX_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 \
   PYTHONPATH=backend python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Use an existing virtual environment where available. The database defaults to `sqlite:///./parallax.db`, relative to the server's working directory; `PARALLAX_DATABASE_URL` overrides it. Do not delete an existing database to change configuration.
+Use an existing virtual environment where available; see `README.md` for exact setup commands. Backend settings load the repository-root `.env` if present; environment variables take precedence. The database defaults to `sqlite:///./parallax.db`, relative to the server's working directory; `PARALLAX_DATABASE_URL` overrides it. Do not delete an existing database to change configuration.
 
 Frontend configuration already present in `frontend/.env`:
 
@@ -328,13 +328,13 @@ Expected errors use FastAPI's `detail` field. Axios puts this at `error.response
 **404: missing case**, including unknown case IDs on nested routes:
 
 ```json
-{"detail": "Case not found"}
+{"detail": "Case not found. Verify the case_id."}
 ```
 
 **404: known case not yet analyzed**, on `/decision`:
 
 ```json
-{"detail": "Decision not available"}
+{"detail": "Decision not available. Run analysis for this case first."}
 ```
 
 Use `CaseDetail.decision === null` to distinguish an unanalyzed case without needing a failing `/decision` request.
@@ -359,7 +359,15 @@ Treat each validation error's `loc` and `msg` as a field message. Additional key
 
 **405: unsupported method:** `{ "detail": "Method Not Allowed" }`.
 
-**Unexpected 500:** there is currently no custom JSON exception envelope. A provider output/parsing bug or database failure can return plain text `Internal Server Error`; handle non-JSON errors safely. The normal unavailable-provider path uses mock claims, not an HTTP failure. Provider validation failures are not guaranteed to return a successful `ABSTAIN` snapshot.
+**502: invalid specialist output:** the response is JSON, and the previous persisted decision remains unchanged:
+
+```json
+{"detail": "Specialist output could not be validated. The previous decision is unchanged. Check the evidence/provider output before retrying analysis."}
+```
+
+Fresh evidence submitted directly to `/reevaluate` may already be stored; fetch the case before retrying to avoid duplicate evidence.
+
+**Unexpected 500:** other unexpected errors, including database failures, can still return plain text `Internal Server Error`; handle non-JSON errors safely. The normal unavailable-provider path uses mock claims, not an HTTP failure. Invalid specialist output is an error, not a successful `ABSTAIN` snapshot.
 
 **Network/CORS/server-unavailable:** no usable HTTP response may reach JavaScript. `error.response` can be undefined. Do not replace the last decision with an invented outcome.
 
